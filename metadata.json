@@ -1,0 +1,7 @@
+{
+  "name": "Roxy AI",
+  "description": "Roxy AI - Witty, warm, and intelligent AI companion with glowing animated energy orb, voice input, speech synthesis, and customizable AI models.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
