@@ -26,6 +26,7 @@ data class ChatUiState(
     val messages: List<MessageEntity> = emptyList(),
     val inputText: String = "",
     val isGenerating: Boolean = false,
+    val streamingContent: String? = null,
     val isListening: Boolean = false,
     val orbState: OrbState = OrbState.IDLE,
     val statusText: String = "Ready to chat",
@@ -204,6 +205,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             it.copy(
                 inputText = "",
                 isGenerating = true,
+                streamingContent = null,
                 orbState = OrbState.GENERATING,
                 statusText = "Generating...",
                 errorMessage = null
@@ -228,8 +230,13 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 val history = repository.getRecentMessages(activeConvId!!)
                     .map { it.role to it.content }
 
-                // Call AI Service
-                val response = repository.requestAiResponse(activeConvId!!, history)
+                // Call AI Service with streaming callback
+                val response = repository.requestAiResponse(activeConvId!!, history) { chunk ->
+                    _uiState.update { current ->
+                        val updated = (current.streamingContent ?: "") + chunk
+                        current.copy(streamingContent = updated)
+                    }
+                }
 
                 // Insert assistant response
                 repository.insertMessage(activeConvId!!, "assistant", response)
@@ -237,6 +244,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.update {
                     it.copy(
                         isGenerating = false,
+                        streamingContent = null,
                         orbState = OrbState.IDLE,
                         statusText = "Ready to chat"
                     )
@@ -245,6 +253,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.update {
                     it.copy(
                         isGenerating = false,
+                        streamingContent = null,
                         orbState = OrbState.IDLE,
                         statusText = "Error",
                         errorMessage = e.message ?: "An unexpected error occurred."
@@ -261,6 +270,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update {
             it.copy(
                 isGenerating = true,
+                streamingContent = null,
                 orbState = OrbState.GENERATING,
                 statusText = "Regenerating...",
                 errorMessage = null
@@ -281,6 +291,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     _uiState.update {
                         it.copy(
                             isGenerating = false,
+                            streamingContent = null,
                             orbState = OrbState.IDLE,
                             statusText = "Ready to chat"
                         )
@@ -288,12 +299,18 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     return@launch
                 }
 
-                val response = repository.requestAiResponse(activeConvId, history)
+                val response = repository.requestAiResponse(activeConvId, history) { chunk ->
+                    _uiState.update { current ->
+                        val updated = (current.streamingContent ?: "") + chunk
+                        current.copy(streamingContent = updated)
+                    }
+                }
                 repository.insertMessage(activeConvId, "assistant", response)
 
                 _uiState.update {
                     it.copy(
                         isGenerating = false,
+                        streamingContent = null,
                         orbState = OrbState.IDLE,
                         statusText = "Ready to chat"
                     )
@@ -302,6 +319,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.update {
                     it.copy(
                         isGenerating = false,
+                        streamingContent = null,
                         orbState = OrbState.IDLE,
                         statusText = "Error",
                         errorMessage = e.message ?: "Failed to regenerate response."
@@ -317,6 +335,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update {
             it.copy(
                 isGenerating = false,
+                streamingContent = null,
                 orbState = OrbState.IDLE,
                 statusText = "Ready to chat"
             )

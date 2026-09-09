@@ -170,15 +170,139 @@ class AiService {
         }
     }
 
+    suspend fun generateWithLongCat(
+        apiKey: String,
+        model: String,
+        messages: List<Pair<String, String>>,
+        onChunk: ((String) -> Unit)? = null,
+        stream: Boolean = true
+    ): String = withContext(Dispatchers.IO) {
+        if (apiKey.isBlank()) {
+            throw IllegalArgumentException("Please provide a valid LongCat API key in Settings.")
+        }
+        val effectiveModel = if (model.isBlank()) "LongCat-2.0" else model.trim()
+        val url = "https://api.longcat.chat/openai/v1/chat/completions"
+
+        val messagesArray = JSONArray().apply {
+            put(JSONObject().apply {
+                put("role", "system")
+                put("content", DEFAULT_SYSTEM_PROMPT)
+            })
+        }
+
+        val recentMessages = messages.takeLast(20)
+        for ((role, content) in recentMessages) {
+            messagesArray.put(JSONObject().apply {
+                put("role", if (role == "assistant") "assistant" else "user")
+                put("content", content)
+            })
+        }
+
+        val useStreaming = stream && onChunk != null
+
+        val requestBodyJson = JSONObject().apply {
+            put("model", effectiveModel)
+            put("messages", messagesArray)
+            put("temperature", 0.8)
+            put("stream", useStreaming)
+        }
+
+        val request = Request.Builder()
+            .url(url)
+            .addHeader("Authorization", "Bearer $apiKey")
+            .addHeader("Content-Type", "application/json")
+            .post(requestBodyJson.toString().toRequestBody(jsonMediaType))
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                val responseBody = response.body?.string() ?: ""
+                val serverMsg = try {
+                    val errorObj = JSONObject(responseBody).optJSONObject("error")
+                    errorObj?.optString("message") ?: ""
+                } catch (e: Exception) {
+                    ""
+                }
+
+                val errorMsg = when {
+                    serverMsg.isNotBlank() -> serverMsg
+                    response.code == 401 -> "Invalid LongCat API key. Please check your key in Settings."
+                    response.code == 402 -> "LongCat account has insufficient token quota."
+                    response.code == 429 -> "LongCat rate limit exceeded. Please wait a moment and try again."
+                    response.code in 500..599 -> "LongCat server is temporarily unavailable (${response.code})."
+                    else -> "HTTP error ${response.code}: ${response.message}"
+                }
+                throw IOException("LongCat error: $errorMsg")
+            }
+
+            if (useStreaming) {
+                val fullResponse = StringBuilder()
+                val source = response.body?.source() ?: throw IOException("LongCat streaming response body was empty.")
+                val reader = source.inputStream().bufferedReader(Charsets.UTF_8)
+
+                try {
+                    while (true) {
+                        val line = reader.readLine() ?: break
+                        val trimmed = line.trim()
+                        if (trimmed.isEmpty() || trimmed.startsWith(":")) continue
+                        if (trimmed == "data: [DONE]") break
+
+                        if (trimmed.startsWith("data: ")) {
+                            val jsonStr = trimmed.substring(6).trim()
+                            if (jsonStr == "[DONE]") break
+                            try {
+                                val chunkJson = JSONObject(jsonStr)
+                                val choices = chunkJson.optJSONArray("choices")
+                                if (choices != null && choices.length() > 0) {
+                                    val choice = choices.getJSONObject(0)
+                                    val delta = choice.optJSONObject("delta")
+                                    val contentChunk = delta?.optString("content", "") ?: ""
+                                    if (contentChunk.isNotEmpty()) {
+                                        fullResponse.append(contentChunk)
+                                        withContext(Dispatchers.Main) {
+                                            onChunk?.invoke(contentChunk)
+                                        }
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                // Skip unparseable chunk
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    if (fullResponse.isEmpty()) {
+                        throw IOException("Failed while streaming from LongCat: ${e.message}")
+                    }
+                }
+
+                return@withContext fullResponse.toString().ifBlank { "No content returned from LongCat." }
+            } else {
+                val responseBody = response.body?.string() ?: ""
+                try {
+                    val json = JSONObject(responseBody)
+                    val choices = json.optJSONArray("choices")
+                    if (choices != null && choices.length() > 0) {
+                        val firstChoice = choices.getJSONObject(0)
+                        val message = firstChoice.optJSONObject("message")
+                        return@withContext message?.optString("content", "") ?: "No response received."
+                    }
+                    "No choices returned from LongCat."
+                } catch (e: Exception) {
+                    throw IOException("Failed to parse LongCat response: ${e.message}")
+                }
+            }
+        }
+    }
+
     suspend fun testConnection(
         provider: String,
         apiKey: String,
         model: String
     ): Result<String> = runCatching {
-        if (provider.equals("openai", ignoreCase = true)) {
-            generateWithOpenAi(apiKey, model, listOf("user" to "Say hello!"))
-        } else {
-            generateWithGemini(apiKey, model, listOf("user" to "Say hello!"))
+        when (provider.lowercase()) {
+            "openai" -> generateWithOpenAi(apiKey, model, listOf("user" to "Say hello!"))
+            "longcat" -> generateWithLongCat(apiKey, model, listOf("user" to "Say hello!"), stream = false)
+            else -> generateWithGemini(apiKey, model, listOf("user" to "Say hello!"))
         }
     }
 }

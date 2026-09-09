@@ -102,29 +102,41 @@ class ChatRepository(private val context: Context) {
 
     suspend fun requestAiResponse(
         conversationId: String,
-        messages: List<Pair<String, String>>
+        messages: List<Pair<String, String>>,
+        onChunk: ((String) -> Unit)? = null
     ): String {
         val currentSettings = _settingsState.value
-        return if (currentSettings.provider.equals("openai", ignoreCase = true)) {
-            val key = currentSettings.openaiKey.trim()
-            if (key.isBlank()) {
-                throw IllegalStateException("Please enter your OpenAI API key in Settings.")
+        return when (currentSettings.provider.lowercase()) {
+            "openai" -> {
+                val key = currentSettings.openaiKey.trim()
+                if (key.isBlank()) {
+                    throw IllegalStateException("Please enter your OpenAI API key in Settings.")
+                }
+                aiService.generateWithOpenAi(key, currentSettings.openaiModel, messages)
             }
-            aiService.generateWithOpenAi(key, currentSettings.openaiModel, messages)
-        } else {
-            // Gemini
-            val customKey = currentSettings.geminiKey.trim()
-            val effectiveKey = when {
-                customKey.isNotBlank() -> customKey
-                BuildConfig.GEMINI_API_KEY.isNotBlank() &&
-                        BuildConfig.GEMINI_API_KEY != "MY_GEMINI_API_KEY" -> BuildConfig.GEMINI_API_KEY
-                else -> ""
+            "longcat" -> {
+                val key = currentSettings.longcatKey.trim()
+                if (key.isBlank()) {
+                    throw IllegalStateException("Please enter your LongCat API key in Settings.")
+                }
+                val model = if (currentSettings.longcatModel.isNotBlank()) currentSettings.longcatModel.trim() else "LongCat-2.0"
+                aiService.generateWithLongCat(key, model, messages, onChunk)
             }
-            if (effectiveKey.isBlank()) {
-                throw IllegalStateException("Please enter your Google Gemini API key in Settings or AI Studio Secrets panel.")
+            else -> {
+                // Gemini
+                val customKey = currentSettings.geminiKey.trim()
+                val effectiveKey = when {
+                    customKey.isNotBlank() -> customKey
+                    BuildConfig.GEMINI_API_KEY.isNotBlank() &&
+                            BuildConfig.GEMINI_API_KEY != "MY_GEMINI_API_KEY" -> BuildConfig.GEMINI_API_KEY
+                    else -> ""
+                }
+                if (effectiveKey.isBlank()) {
+                    throw IllegalStateException("Please enter your Google Gemini API key in Settings or AI Studio Secrets panel.")
+                }
+                val model = if (currentSettings.geminiModel.isNotBlank()) currentSettings.geminiModel else "gemini-3.5-flash"
+                aiService.generateWithGemini(effectiveKey, model, messages)
             }
-            val model = if (currentSettings.geminiModel.isNotBlank()) currentSettings.geminiModel else "gemini-3.5-flash"
-            aiService.generateWithGemini(effectiveKey, model, messages)
         }
     }
 
@@ -138,6 +150,8 @@ class ChatRepository(private val context: Context) {
         val geminiModel = prefs.getString("geminiModel", "gemini-3.5-flash") ?: "gemini-3.5-flash"
         val openaiKey = prefs.getString("openaiKey", "") ?: ""
         val openaiModel = prefs.getString("openaiModel", "gpt-4o-mini") ?: "gpt-4o-mini"
+        val longcatKey = prefs.getString("longcatKey", "") ?: ""
+        val longcatModel = prefs.getString("longcatModel", "LongCat-2.0") ?: "LongCat-2.0"
         val isDarkTheme = prefs.getBoolean("isDarkTheme", true)
 
         return AppSettings(
@@ -146,6 +160,8 @@ class ChatRepository(private val context: Context) {
             geminiModel = geminiModel,
             openaiKey = openaiKey,
             openaiModel = openaiModel,
+            longcatKey = longcatKey,
+            longcatModel = longcatModel,
             isDarkTheme = isDarkTheme
         )
     }
@@ -157,6 +173,8 @@ class ChatRepository(private val context: Context) {
             .putString("geminiModel", settings.geminiModel)
             .putString("openaiKey", settings.openaiKey)
             .putString("openaiModel", settings.openaiModel)
+            .putString("longcatKey", settings.longcatKey)
+            .putString("longcatModel", settings.longcatModel)
             .putBoolean("isDarkTheme", settings.isDarkTheme)
             .apply()
         _settingsState.value = settings

@@ -70,6 +70,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.model.MessageEntity
 import com.example.ui.components.ChatDrawerContent
 import com.example.ui.components.GlowingOrb
 import com.example.ui.components.MessageBubble
@@ -124,8 +125,8 @@ fun RoxyChatScreen(viewModel: ChatViewModel) {
         }
     }
 
-    // Scroll to bottom when new messages arrive or while typing
-    LaunchedEffect(uiState.messages.size, uiState.isGenerating) {
+    // Scroll to bottom when new messages arrive or while typing/streaming
+    LaunchedEffect(uiState.messages.size, uiState.isGenerating, uiState.streamingContent) {
         val count = uiState.messages.size + (if (uiState.isGenerating) 1 else 0)
         if (count > 0) {
             listState.animateScrollToItem(count - 1)
@@ -458,16 +459,38 @@ fun RoxyChatScreen(viewModel: ChatViewModel) {
                             )
                         }
 
-                        // Typing indicator bubble
+                        // Typing indicator or real-time streaming bubble
                         if (uiState.isGenerating) {
-                            item(key = "typing_indicator") {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 4.dp),
-                                    horizontalArrangement = Arrangement.Start
-                                ) {
-                                    TypingIndicator()
+                            val streaming = uiState.streamingContent
+                            if (!streaming.isNullOrBlank()) {
+                                item(key = "streaming_bubble") {
+                                    MessageBubble(
+                                        message = MessageEntity(
+                                            id = -999L,
+                                            conversationId = uiState.currentConversationId ?: "",
+                                            role = "assistant",
+                                            content = streaming,
+                                            timestamp = System.currentTimeMillis()
+                                        ),
+                                        isLastMessage = true,
+                                        isGenerating = true,
+                                        isSpeakingThis = false,
+                                        isDarkTheme = uiState.appSettings.isDarkTheme,
+                                        onSpeak = {},
+                                        onStopSpeaking = {},
+                                        onRegenerate = {}
+                                    )
+                                }
+                            } else {
+                                item(key = "typing_indicator") {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 4.dp),
+                                        horizontalArrangement = Arrangement.Start
+                                    ) {
+                                        TypingIndicator()
+                                    }
                                 }
                             }
                         }

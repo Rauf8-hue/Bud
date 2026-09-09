@@ -1,5 +1,7 @@
 package com.example.ui.components
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -20,6 +22,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Error
@@ -49,6 +52,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -71,15 +75,19 @@ fun SettingsDialog(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     var selectedProvider by remember { mutableStateOf(currentSettings.provider) }
     var geminiKey by remember { mutableStateOf(currentSettings.geminiKey) }
     var geminiModel by remember { mutableStateOf(currentSettings.geminiModel) }
     var openaiKey by remember { mutableStateOf(currentSettings.openaiKey) }
     var openaiModel by remember { mutableStateOf(currentSettings.openaiModel) }
+    var longcatKey by remember { mutableStateOf(currentSettings.longcatKey) }
+    var longcatModel by remember { mutableStateOf(currentSettings.longcatModel) }
 
     var isGeminiKeyVisible by remember { mutableStateOf(false) }
     var isOpenaiKeyVisible by remember { mutableStateOf(false) }
+    var isLongcatKeyVisible by remember { mutableStateOf(false) }
 
     var testStatusMessage by remember { mutableStateOf<String?>(null) }
     var isTestSuccess by remember { mutableStateOf<Boolean?>(null) }
@@ -121,7 +129,7 @@ fun SettingsDialog(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Provider Switcher Tabs
+            // Provider Switcher Tabs (OpenAI, Gemini, LongCat ONLY)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -143,14 +151,15 @@ fun SettingsDialog(
                             testStatusMessage = null
                             isTestSuccess = null
                         }
-                        .padding(vertical = 10.dp),
+                        .padding(vertical = 10.dp)
+                        .testTag("provider_tab_gemini"),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "Google Gemini",
+                        text = "Gemini",
                         fontWeight = if (isGemini) FontWeight.Bold else FontWeight.Normal,
                         color = if (isGemini) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 14.sp
+                        fontSize = 13.sp
                     )
                 }
 
@@ -167,14 +176,40 @@ fun SettingsDialog(
                             testStatusMessage = null
                             isTestSuccess = null
                         }
-                        .padding(vertical = 10.dp),
+                        .padding(vertical = 10.dp)
+                        .testTag("provider_tab_openai"),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = "OpenAI",
                         fontWeight = if (isOpenAi) FontWeight.Bold else FontWeight.Normal,
                         color = if (isOpenAi) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 14.sp
+                        fontSize = 13.sp
+                    )
+                }
+
+                val isLongCat = selectedProvider.equals("longcat", ignoreCase = true)
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(
+                            if (isLongCat) MaterialTheme.colorScheme.primary else Color.Transparent
+                        )
+                        .clickable {
+                            selectedProvider = "longcat"
+                            testStatusMessage = null
+                            isTestSuccess = null
+                        }
+                        .padding(vertical = 10.dp)
+                        .testTag("provider_tab_longcat"),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "LongCat",
+                        fontWeight = if (isLongCat) FontWeight.Bold else FontWeight.Normal,
+                        color = if (isLongCat) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 13.sp
                     )
                 }
             }
@@ -182,252 +217,447 @@ fun SettingsDialog(
             Spacer(modifier = Modifier.height(20.dp))
 
             // Tab Content
-            if (selectedProvider.equals("gemini", ignoreCase = true)) {
-                // Google Gemini Settings
-                Text(
-                    text = "API Key",
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontWeight = FontWeight.Medium
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                val hasBuildConfigKey = BuildConfig.GEMINI_API_KEY.isNotBlank() &&
-                        BuildConfig.GEMINI_API_KEY != "MY_GEMINI_API_KEY"
-
-                OutlinedTextField(
-                    value = geminiKey,
-                    onValueChange = { geminiKey = it },
-                    placeholder = {
-                        Text(
-                            if (hasBuildConfigKey) "Preconfigured via Secrets panel" else "AIzaSy..."
-                        )
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("gemini_api_key_input"),
-                    visualTransformation = if (isGeminiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                    trailingIcon = {
-                        IconButton(onClick = { isGeminiKeyVisible = !isGeminiKeyVisible }) {
-                            Icon(
-                                imageVector = if (isGeminiKeyVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                contentDescription = "Toggle key visibility"
-                            )
-                        }
-                    },
-                    shape = RoundedCornerShape(12.dp),
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outline
+            when (selectedProvider.lowercase()) {
+                "gemini" -> {
+                    // Google Gemini Settings
+                    Text(
+                        text = "API Key",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.Medium
                     )
-                )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    val hasBuildConfigKey = BuildConfig.GEMINI_API_KEY.isNotBlank() &&
+                            BuildConfig.GEMINI_API_KEY != "MY_GEMINI_API_KEY"
 
-                Spacer(modifier = Modifier.height(14.dp))
-
-                Text(
-                    text = "Model",
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontWeight = FontWeight.Medium
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                OutlinedTextField(
-                    value = geminiModel,
-                    onValueChange = { geminiModel = it },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("gemini_model_input"),
-                    shape = RoundedCornerShape(12.dp),
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outline
-                    )
-                )
-
-                // Quick model chips
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    val models = listOf("gemini-3.5-flash", "gemini-3.1-pro-preview")
-                    for (m in models) {
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = if (geminiModel == m) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                            modifier = Modifier.clickable { geminiModel = m }
-                        ) {
+                    OutlinedTextField(
+                        value = geminiKey,
+                        onValueChange = { geminiKey = it },
+                        placeholder = {
                             Text(
-                                text = m,
-                                fontSize = 11.sp,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                color = if (geminiModel == m) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                if (hasBuildConfigKey) "Preconfigured via Secrets panel" else "AIzaSy..."
                             )
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("gemini_api_key_input"),
+                        visualTransformation = if (isGeminiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            IconButton(onClick = { isGeminiKeyVisible = !isGeminiKeyVisible }) {
+                                Icon(
+                                    imageVector = if (isGeminiKeyVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                    contentDescription = "Toggle key visibility"
+                                )
+                            }
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                        )
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Text(
+                        text = "Model",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = geminiModel,
+                        onValueChange = { geminiModel = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("gemini_model_input"),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                        )
+                    )
+
+                    // Quick model chips
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        val models = listOf("gemini-3.5-flash", "gemini-3.1-pro-preview")
+                        for (m in models) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (geminiModel == m) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                modifier = Modifier.clickable { geminiModel = m }
+                            ) {
+                                Text(
+                                    text = m,
+                                    fontSize = 11.sp,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    color = if (geminiModel == m) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Test / Clear Buttons
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                scope.launch {
+                                    isTesting = true
+                                    testStatusMessage = "Testing connection..."
+                                    isTestSuccess = null
+                                    val effectiveKey = when {
+                                        geminiKey.isNotBlank() -> geminiKey.trim()
+                                        hasBuildConfigKey -> BuildConfig.GEMINI_API_KEY
+                                        else -> ""
+                                    }
+                                    val result = onTestConnection("gemini", effectiveKey, geminiModel)
+                                    isTesting = false
+                                    result.onSuccess {
+                                        testStatusMessage = "Connection successful!"
+                                        isTestSuccess = true
+                                    }.onFailure { error ->
+                                        testStatusMessage = error.message ?: "Connection failed"
+                                        isTestSuccess = false
+                                    }
+                                }
+                            },
+                            enabled = !isTesting,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            if (isTesting) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                Spacer(modifier = Modifier.width(6.dp))
+                            }
+                            Text("Test")
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                geminiKey = ""
+                                testStatusMessage = "Key cleared"
+                                isTestSuccess = null
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = MaterialTheme.colorScheme.error
+                            )
+                        ) {
+                            Text("Clear Key")
                         }
                     }
                 }
+                "openai" -> {
+                    // OpenAI Settings
+                    Text(
+                        text = "API Key",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = openaiKey,
+                        onValueChange = { openaiKey = it },
+                        placeholder = { Text("sk-...") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("openai_api_key_input"),
+                        visualTransformation = if (isOpenaiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            IconButton(onClick = { isOpenaiKeyVisible = !isOpenaiKeyVisible }) {
+                                Icon(
+                                    imageVector = if (isOpenaiKeyVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                    contentDescription = "Toggle key visibility"
+                                )
+                            }
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                        )
+                    )
 
-                Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
-                // Test / Clear Buttons
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = {
-                            scope.launch {
-                                isTesting = true
-                                testStatusMessage = "Testing connection..."
-                                isTestSuccess = null
-                                val effectiveKey = when {
-                                    geminiKey.isNotBlank() -> geminiKey.trim()
-                                    hasBuildConfigKey -> BuildConfig.GEMINI_API_KEY
-                                    else -> ""
+                    Text(
+                        text = "Model",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = openaiModel,
+                        onValueChange = { openaiModel = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("openai_model_input"),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                        )
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Test / Clear Buttons
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                scope.launch {
+                                    isTesting = true
+                                    testStatusMessage = "Testing connection..."
+                                    isTestSuccess = null
+                                    val result = onTestConnection("openai", openaiKey.trim(), openaiModel)
+                                    isTesting = false
+                                    result.onSuccess {
+                                        testStatusMessage = "Connection successful!"
+                                        isTestSuccess = true
+                                    }.onFailure { error ->
+                                        testStatusMessage = error.message ?: "Connection failed"
+                                        isTestSuccess = false
+                                    }
                                 }
-                                val result = onTestConnection("gemini", effectiveKey, geminiModel)
-                                isTesting = false
-                                result.onSuccess {
-                                    testStatusMessage = "Connection successful!"
-                                    isTestSuccess = true
-                                }.onFailure { error ->
-                                    testStatusMessage = error.message ?: "Connection failed"
+                            },
+                            enabled = !isTesting,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            if (isTesting) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                Spacer(modifier = Modifier.width(6.dp))
+                            }
+                            Text("Test")
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                openaiKey = ""
+                                testStatusMessage = "Key cleared"
+                                isTestSuccess = null
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = MaterialTheme.colorScheme.error
+                            )
+                        ) {
+                            Text("Clear Key")
+                        }
+                    }
+                }
+                else -> {
+                    // LongCat Settings
+                    Text(
+                        text = "LongCat API Key",
+                        fontSize = 15.sp,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "LongCat AI brings long-context reasoning with LongCat-2.0 models. Get your API key from the official LongCat platform.",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 16.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // "Get LongCat API Key" Button
+                    Button(
+                        onClick = {
+                            val targetUri = Uri.parse("https://longcat.chat/platform/api-keys")
+                            val intent = Intent(Intent.ACTION_VIEW, targetUri).apply {
+                                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                            }
+                            try {
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                val fallbackIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://longcat.chat")).apply {
+                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                }
+                                try {
+                                    context.startActivity(fallbackIntent)
+                                } catch (e2: Exception) {
+                                    testStatusMessage = "Could not open browser. Please visit https://longcat.chat"
                                     isTestSuccess = false
                                 }
                             }
                         },
-                        enabled = !isTesting,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        if (isTesting) {
-                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                            Spacer(modifier = Modifier.width(6.dp))
-                        }
-                        Text("Test")
-                    }
-
-                    OutlinedButton(
-                        onClick = {
-                            geminiKey = ""
-                            testStatusMessage = "Key cleared"
-                            isTestSuccess = null
-                        },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("get_longcat_api_key_button"),
                         shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.error
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                     ) {
-                        Text("Clear Key")
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.OpenInNew,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Get LongCat API Key",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
                     }
-                }
-            } else {
-                // OpenAI Settings
-                Text(
-                    text = "API Key",
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontWeight = FontWeight.Medium
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                OutlinedTextField(
-                    value = openaiKey,
-                    onValueChange = { openaiKey = it },
-                    placeholder = { Text("sk-...") },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("openai_api_key_input"),
-                    visualTransformation = if (isOpenaiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                    trailingIcon = {
-                        IconButton(onClick = { isOpenaiKeyVisible = !isOpenaiKeyVisible }) {
-                            Icon(
-                                imageVector = if (isOpenaiKeyVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                contentDescription = "Toggle key visibility"
-                            )
-                        }
-                    },
-                    shape = RoundedCornerShape(12.dp),
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outline
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Text(
+                        text = "API Key",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.Medium
                     )
-                )
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                Text(
-                    text = "Model",
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontWeight = FontWeight.Medium
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                OutlinedTextField(
-                    value = openaiModel,
-                    onValueChange = { openaiModel = it },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("openai_model_input"),
-                    shape = RoundedCornerShape(12.dp),
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outline
-                    )
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Test / Clear Buttons
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = {
-                            scope.launch {
-                                isTesting = true
-                                testStatusMessage = "Testing connection..."
-                                isTestSuccess = null
-                                val result = onTestConnection("openai", openaiKey.trim(), openaiModel)
-                                isTesting = false
-                                result.onSuccess {
-                                    testStatusMessage = "Connection successful!"
-                                    isTestSuccess = true
-                                }.onFailure { error ->
-                                    testStatusMessage = error.message ?: "Connection failed"
-                                    isTestSuccess = false
-                                }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = longcatKey,
+                        onValueChange = { longcatKey = it },
+                        placeholder = { Text("Paste your LongCat API key...") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("longcat_api_key_input"),
+                        visualTransformation = if (isLongcatKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            IconButton(onClick = { isLongcatKeyVisible = !isLongcatKeyVisible }) {
+                                Icon(
+                                    imageVector = if (isLongcatKeyVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                    contentDescription = "Toggle key visibility"
+                                )
                             }
                         },
-                        enabled = !isTesting,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp)
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                        )
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Text(
+                        text = "Model",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = longcatModel,
+                        onValueChange = { longcatModel = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("longcat_model_input"),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                        )
+                    )
+
+                    // Quick model chips for LongCat
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        if (isTesting) {
-                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                            Spacer(modifier = Modifier.width(6.dp))
+                        val models = listOf("LongCat-2.0", "longcat-2.0:thinking", "LongCat-Flash")
+                        for (m in models) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (longcatModel == m) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                modifier = Modifier.clickable { longcatModel = m }
+                            ) {
+                                Text(
+                                    text = m,
+                                    fontSize = 11.sp,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    color = if (longcatModel == m) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
-                        Text("Test")
                     }
 
-                    OutlinedButton(
-                        onClick = {
-                            openaiKey = ""
-                            testStatusMessage = "Key cleared"
-                            isTestSuccess = null
-                        },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.error
-                        )
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Test / Clear Buttons
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Text("Clear Key")
+                        OutlinedButton(
+                            onClick = {
+                                scope.launch {
+                                    isTesting = true
+                                    testStatusMessage = "Testing LongCat connection..."
+                                    isTestSuccess = null
+                                    val result = onTestConnection("longcat", longcatKey.trim(), longcatModel.trim())
+                                    isTesting = false
+                                    result.onSuccess {
+                                        testStatusMessage = "LongCat connected successfully!"
+                                        isTestSuccess = true
+                                    }.onFailure { error ->
+                                        testStatusMessage = error.message ?: "LongCat connection failed"
+                                        isTestSuccess = false
+                                    }
+                                }
+                            },
+                            enabled = !isTesting,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            if (isTesting) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                Spacer(modifier = Modifier.width(6.dp))
+                            }
+                            Text("Test")
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                longcatKey = ""
+                                testStatusMessage = "LongCat key cleared"
+                                isTestSuccess = null
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = MaterialTheme.colorScheme.error
+                            )
+                        ) {
+                            Text("Clear Key")
+                        }
                     }
                 }
             }
@@ -488,7 +718,9 @@ fun SettingsDialog(
                         geminiKey = geminiKey.trim(),
                         geminiModel = geminiModel.trim(),
                         openaiKey = openaiKey.trim(),
-                        openaiModel = openaiModel.trim()
+                        openaiModel = openaiModel.trim(),
+                        longcatKey = longcatKey.trim(),
+                        longcatModel = longcatModel.trim()
                     )
                     onSaveSettings(newSettings)
                     onDismiss()
